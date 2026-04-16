@@ -140,7 +140,7 @@ var PhotoboothFrameGenerator = class {
     const slots = [];
     const step = Math.max(1, Math.floor(this.config.minSlotSize / 4));
     const threshold = this.config.alphaThreshold;
-    const maxQueueSize = Math.floor(width * height / 2);
+    const maxQueueSize = width * height;
     const queueX = new Int32Array(maxQueueSize);
     const queueY = new Int32Array(maxQueueSize);
     for (let y = 0; y < height; y += step) {

@@ -190,9 +190,9 @@ export class PhotoboothFrameGenerator {
         const threshold = this.config.alphaThreshold;
 
         // Pre-allocate queue array to avoid dynamic resizing in JS engine
-        // Ukuran maksimal queue adalah jumlah piksel, tapi biasanya jauh lebih kecil.
-        // Kita gunakan array biasa dengan pre-allocation.
-        const maxQueueSize = Math.floor((width * height) / 2);
+        // Ukuran maksimal queue harus sebesar jumlah piksel (width * height)
+        // karena setiap piksel dapat dimasukkan ke dalam queue satu kali.
+        const maxQueueSize = width * height;
         const queueX = new Int32Array(maxQueueSize);
         const queueY = new Int32Array(maxQueueSize);
 
