@@ -1,0 +1,35 @@
+{
+  "name": "@kotaksurat/expo-photobooth-engine",
+  "version": "1.0.0",
+  "description": "Photobooth engine for Expo React Native",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "test": "vitest"
+  },
+  "keywords": [
+    "expo",
+    "react-native",
+    "photobooth",
+    "canvas",
+    "image-processing"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@shopify/react-native-skia": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/react-native": "^0.72.8",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  }
+}
