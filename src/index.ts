@@ -40,19 +40,23 @@ export class PhotoboothFrameGenerator {
         assignments: SlotPhotoAssignment[],
         fallbackPhotos: ImageSource[]
     ): Promise<RenderResult> {
+        let frame: SkImage | null = null;
+        let surface: SkSurface | null = null;
+        let finalImage: SkImage | null = null;
+        const loadedPhotos: SkImage[] = [];
+
         try {
-            const frame = await this.loadImage(frameSource);
+            frame = await this.loadImage(frameSource);
             if (!frame) throw new Error("Failed to load frame image");
 
             const width = frame.width();
             const height = frame.height();
 
             // 1. Detect Slots
-            // We need to read pixels to find transparency
             const slots = this.detectSlotsSync(frame);
 
             // 2. Prepare Surface for rendering
-            const surface = Skia.Surface.MakeOffscreen(width, height);
+            surface = Skia.Surface.MakeOffscreen(width, height);
             if (!surface) throw new Error("Failed to create Skia surface");
             const canvas = surface.getCanvas();
 
@@ -67,6 +71,7 @@ export class PhotoboothFrameGenerator {
                 if (photoSource) {
                     const photo = await this.loadImage(photoSource);
                     if (photo) {
+                        loadedPhotos.push(photo); // Store reference for cleanup
                         this.drawCover(canvas, photo, slots[i]);
                     }
                 }
@@ -77,11 +82,10 @@ export class PhotoboothFrameGenerator {
 
             // 5. Export Result
             surface.flush();
-            const image = surface.makeImageSnapshot();
-            const format = this.config.outputFormat === 'jpeg' ? 3 : (this.config.outputFormat === 'webp' ? 4 : 2); // SkEncodedImageFormat: PNG=2, JPEG=3, WEBP=4
+            finalImage = surface.makeImageSnapshot();
+            const format = this.config.outputFormat === 'jpeg' ? 3 : (this.config.outputFormat === 'webp' ? 4 : 2);
             
-            // Note: In real react-native-skia, encodeToBase64 might be sync or async depending on version
-            const base64 = image.encodeToBase64(format as any, this.config.quality);
+            const base64 = finalImage.encodeToBase64(format as any, this.config.quality);
             
             return {
                 uri: `data:image/${this.config.outputFormat};base64,${base64}`,
@@ -92,6 +96,14 @@ export class PhotoboothFrameGenerator {
             };
         } catch (error) {
             throw new Error(`PhotoboothFrameGenerator Error: ${error}`);
+        } finally {
+            // ALWAYS cleanup Skia objects to prevent memory leaks in C++
+            if (frame) frame.dispose();
+            if (finalImage) finalImage.dispose();
+            if (surface) surface.dispose();
+            for (const photo of loadedPhotos) {
+                if (photo) photo.dispose();
+            }
         }
     }
 
@@ -99,8 +111,9 @@ export class PhotoboothFrameGenerator {
      * Detect slots without rendering
      */
     public async detectSlots(frameSource: ImageSource): Promise<SlotDetectionResult> {
+        let frame: SkImage | null = null;
         try {
-            const frame = await this.loadImage(frameSource);
+            frame = await this.loadImage(frameSource);
             if (!frame) throw new Error("Failed to load frame image");
 
             const slots = this.detectSlotsSync(frame);
@@ -112,6 +125,8 @@ export class PhotoboothFrameGenerator {
             };
         } catch (error) {
             throw new Error(`PhotoboothFrameGenerator Error: ${error}`);
+        } finally {
+            if (frame) frame.dispose();
         }
     }
 
@@ -146,11 +161,15 @@ export class PhotoboothFrameGenerator {
             }
             
             // For remote URL or local file URI, we need to fetch it first
-            // In RN library, we assume the user might pass a URI that fetch can handle
             try {
                 const response = await fetch(source);
                 const blob = await response.arrayBuffer();
-                return Skia.Image.MakeImageFromEncoded(Skia.Data.fromBytes(new Uint8Array(blob)));
+                const data = Skia.Data.fromBytes(new Uint8Array(blob));
+                const image = Skia.Image.MakeImageFromEncoded(data);
+                // Note: Skia.Data holds memory, ideally we dispose it if SDK supports it, 
+                // but Image takes ownership or copies. We dispose Data.
+                try { (data as any)?.dispose?.(); } catch(e){} 
+                return image;
             } catch (e) {
                 console.error("Failed to fetch image:", source, e);
                 return null;

@@ -50,13 +50,17 @@ var PhotoboothFrameGenerator = class {
     return this.render(frameSource, assignments, fallbackPhotos);
   }
   async render(frameSource, assignments, fallbackPhotos) {
+    let frame = null;
+    let surface = null;
+    let finalImage = null;
+    const loadedPhotos = [];
     try {
-      const frame = await this.loadImage(frameSource);
+      frame = await this.loadImage(frameSource);
       if (!frame) throw new Error("Failed to load frame image");
       const width = frame.width();
       const height = frame.height();
       const slots = this.detectSlotsSync(frame);
-      const surface = import_react_native_skia.Skia.Surface.MakeOffscreen(width, height);
+      surface = import_react_native_skia.Skia.Surface.MakeOffscreen(width, height);
       if (!surface) throw new Error("Failed to create Skia surface");
       const canvas = surface.getCanvas();
       canvas.clear(import_react_native_skia.Skia.Color("transparent"));
@@ -66,15 +70,16 @@ var PhotoboothFrameGenerator = class {
         if (photoSource) {
           const photo = await this.loadImage(photoSource);
           if (photo) {
+            loadedPhotos.push(photo);
             this.drawCover(canvas, photo, slots[i]);
           }
         }
       }
       canvas.drawImage(frame, 0, 0);
       surface.flush();
-      const image = surface.makeImageSnapshot();
+      finalImage = surface.makeImageSnapshot();
       const format = this.config.outputFormat === "jpeg" ? 3 : this.config.outputFormat === "webp" ? 4 : 2;
-      const base64 = image.encodeToBase64(format, this.config.quality);
+      const base64 = finalImage.encodeToBase64(format, this.config.quality);
       return {
         uri: `data:image/${this.config.outputFormat};base64,${base64}`,
         base64,
@@ -84,14 +89,22 @@ var PhotoboothFrameGenerator = class {
       };
     } catch (error) {
       throw new Error(`PhotoboothFrameGenerator Error: ${error}`);
+    } finally {
+      if (frame) frame.dispose();
+      if (finalImage) finalImage.dispose();
+      if (surface) surface.dispose();
+      for (const photo of loadedPhotos) {
+        if (photo) photo.dispose();
+      }
     }
   }
   /**
    * Detect slots without rendering
    */
   async detectSlots(frameSource) {
+    let frame = null;
     try {
-      const frame = await this.loadImage(frameSource);
+      frame = await this.loadImage(frameSource);
       if (!frame) throw new Error("Failed to load frame image");
       const slots = this.detectSlotsSync(frame);
       return {
@@ -101,6 +114,8 @@ var PhotoboothFrameGenerator = class {
       };
     } catch (error) {
       throw new Error(`PhotoboothFrameGenerator Error: ${error}`);
+    } finally {
+      if (frame) frame.dispose();
     }
   }
   detectSlotsSync(image) {
@@ -130,7 +145,13 @@ var PhotoboothFrameGenerator = class {
       try {
         const response = await fetch(source);
         const blob = await response.arrayBuffer();
-        return import_react_native_skia.Skia.Image.MakeImageFromEncoded(import_react_native_skia.Skia.Data.fromBytes(new Uint8Array(blob)));
+        const data = import_react_native_skia.Skia.Data.fromBytes(new Uint8Array(blob));
+        const image = import_react_native_skia.Skia.Image.MakeImageFromEncoded(data);
+        try {
+          data?.dispose?.();
+        } catch (e) {
+        }
+        return image;
       } catch (e) {
         console.error("Failed to fetch image:", source, e);
         return null;
