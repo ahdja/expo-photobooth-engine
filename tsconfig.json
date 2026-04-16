@@ -12,8 +12,12 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "jsx": "react-native"
+    "jsx": "react-native",
+    "baseUrl": ".",
+    "paths": {
+      "@kotaksurat/expo-photobooth-engine": ["src/index.ts"]
+    }
   },
-  "include": ["src"],
+  "include": ["src", "example"],
   "exclude": ["node_modules", "dist", "test"]
 }
