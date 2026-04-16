@@ -12,7 +12,7 @@ npm install @kotaksurat/expo-photobooth-engine @shopify/react-native-skia
 yarn add @kotaksurat/expo-photobooth-engine @shopify/react-native-skia
 ```
 
-Ensure you have followed the [React Native Skia installation guide](https://shopify.github.io/react-native-skia/docs/installation).
+Ensure you have followed the [React Native Skia installation guide](https://shopify.github.io/react-native-skia/docs/getting-started/installation).
 
 ## Usage
 
