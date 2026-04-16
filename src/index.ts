@@ -163,49 +163,103 @@ export class PhotoboothFrameGenerator {
     private findSlotsBFS(pixels: Uint8Array, width: number, height: number): Slot[] {
         const visited = new Uint8Array(width * height);
         const slots: Slot[] = [];
+        
+        // Optimasi 1: Sub-sampling (stride) untuk pencarian awal.
+        // Karena minSlotSize biasanya besar (misal 50px), kita tidak perlu mengecek setiap piksel
+        // untuk menemukan *titik awal* slot transparan. Kita bisa melompati beberapa piksel.
+        const step = Math.max(1, Math.floor(this.config.minSlotSize / 4));
+        const threshold = this.config.alphaThreshold;
 
-        // In RGBA_8888, alpha is the 4th byte
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                const idx = y * width + x;
-                const alphaIdx = idx * 4 + 3;
+        // Pre-allocate queue array to avoid dynamic resizing in JS engine
+        // Ukuran maksimal queue adalah jumlah piksel, tapi biasanya jauh lebih kecil.
+        // Kita gunakan array biasa dengan pre-allocation.
+        const maxQueueSize = Math.floor((width * height) / 2);
+        const queueX = new Int32Array(maxQueueSize);
+        const queueY = new Int32Array(maxQueueSize);
 
-                if (pixels[alphaIdx] < this.config.alphaThreshold && !visited[idx]) {
-                    const queue: number[] = [idx];
+        for (let y = 0; y < height; y += step) {
+            for (let x = 0; x < width; x += step) {
+                let idx = y * width + x;
+                
+                // Cek pixel saat ini. Alpha ada di idx * 4 + 3
+                if (pixels[(idx << 2) + 3] < threshold && visited[idx] === 0) {
+                    
+                    // Kita menemukan titik awal slot, sekarang lakukan BFS/Flood-fill penuh 
+                    // (stride = 1) untuk mencari batas-batas (boundary) slot ini.
+                    
+                    queueX[0] = x;
+                    queueY[0] = y;
                     visited[idx] = 1;
 
                     const boundary: {x: number, y: number}[] = [];
                     let minX = x, maxX = x;
 
                     let head = 0;
-                    while (head < queue.length) {
-                        const curr = queue[head++];
-                        const cx = curr % width, cy = Math.floor(curr / width);
+                    let tail = 1;
 
-                        const neighbors = [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]];
+                    while (head < tail) {
+                        const cx = queueX[head];
+                        const cy = queueY[head++];
+                        
                         let isBoundary = false;
 
-                        for (const [nx, ny] of neighbors) {
-                            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                                const nIdx = ny * width + nx;
-                                const nAlphaIdx = nIdx * 4 + 3;
-                                if (pixels[nAlphaIdx] < this.config.alphaThreshold) {
-                                    if (!visited[nIdx]) {
-                                        visited[nIdx] = 1;
-                                        queue.push(nIdx);
-                                        if (nx < minX) minX = nx; if (nx > maxX) maxX = nx;
-                                    }
-                                } else {
-                                    isBoundary = true;
+                        // Unroll loop tetangga (Atas, Bawah, Kiri, Kanan) untuk menghindari pembuatan array di dalam loop
+                        // Kanan
+                        if (cx + 1 < width) {
+                            const nx = cx + 1, ny = cy;
+                            const nIdx = ny * width + nx;
+                            if (pixels[(nIdx << 2) + 3] < threshold) {
+                                if (visited[nIdx] === 0) {
+                                    visited[nIdx] = 1;
+                                    queueX[tail] = nx; queueY[tail++] = ny;
+                                    if (nx > maxX) maxX = nx;
                                 }
-                            } else {
-                                isBoundary = true;
-                            }
-                        }
+                            } else { isBoundary = true; }
+                        } else { isBoundary = true; }
+
+                        // Kiri
+                        if (cx - 1 >= 0) {
+                            const nx = cx - 1, ny = cy;
+                            const nIdx = ny * width + nx;
+                            if (pixels[(nIdx << 2) + 3] < threshold) {
+                                if (visited[nIdx] === 0) {
+                                    visited[nIdx] = 1;
+                                    queueX[tail] = nx; queueY[tail++] = ny;
+                                    if (nx < minX) minX = nx;
+                                }
+                            } else { isBoundary = true; }
+                        } else { isBoundary = true; }
+
+                        // Bawah
+                        if (cy + 1 < height) {
+                            const nx = cx, ny = cy + 1;
+                            const nIdx = ny * width + nx;
+                            if (pixels[(nIdx << 2) + 3] < threshold) {
+                                if (visited[nIdx] === 0) {
+                                    visited[nIdx] = 1;
+                                    queueX[tail] = nx; queueY[tail++] = ny;
+                                }
+                            } else { isBoundary = true; }
+                        } else { isBoundary = true; }
+
+                        // Atas
+                        if (cy - 1 >= 0) {
+                            const nx = cx, ny = cy - 1;
+                            const nIdx = ny * width + nx;
+                            if (pixels[(nIdx << 2) + 3] < threshold) {
+                                if (visited[nIdx] === 0) {
+                                    visited[nIdx] = 1;
+                                    queueX[tail] = nx; queueY[tail++] = ny;
+                                }
+                            } else { isBoundary = true; }
+                        } else { isBoundary = true; }
 
                         if (isBoundary) {
                             boundary.push({x: cx, y: cy});
                         }
+                        
+                        // Fallback safety if slot is insanely huge (mengatasi batas alokasi manual)
+                        if (tail >= maxQueueSize) break; 
                     }
 
                     if (maxX - minX > this.config.minSlotSize) {
@@ -218,7 +272,8 @@ export class PhotoboothFrameGenerator {
                 }
             }
         }
-        return slots.sort((a, b) => Math.round(a.cy - b.cy) || Math.round(a.cx - b.cx));
+        
+        return slots.sort((a, b) => (a.cy | 0) - (b.cy | 0) || (a.cx | 0) - (b.cx | 0));
     }
 
     private convexHull(pts: {x: number, y: number}[]): {x: number, y: number}[] {
